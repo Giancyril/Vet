@@ -3,6 +3,8 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.health_score import HealthScore, calculate_health_score
+from app.agents.multi_reviewer import run_multi_agent_analysis
 from app.core.logging import logger
 from app.github.auth import get_installation_access_token
 from app.github.commenter import post_github_review
@@ -29,18 +31,13 @@ def _filter_findings_by_config(
 
     filtered = []
     for f in findings:
-        # Check severity threshold
         f_rank = severity_rank.get(f.severity, 1)
         if f_rank < min_rank:
             continue
-
-        # Check enabled categories
         if config.enabled_categories and f.category not in config.enabled_categories:
             continue
-
         filtered.append(f)
 
-    # Apply max comments per PR
     return filtered[: config.max_comments_per_pr]
 
 
@@ -57,17 +54,21 @@ async def execute_pr_review_pipeline(
     db: AsyncSession,
 ) -> PullRequestReview:
     """
-    Full automated PR Review Execution Pipeline:
+    Full automated PR Review Execution Pipeline (Multi-Agent Edition):
     1. Authenticate with GitHub App and get installation token
     2. Build context: fetch changed files, unified diffs, and file contents
     3. Load repository config (min severity, custom instructions, category filters)
-    4. Run Gemini AI code review analysis
-    5. Filter findings per repository configuration
-    6. Post review back to GitHub (inline comments + summary review)
-    7. Persist PullRequestReview and ReviewFindings in database
+    4. Run multi-agent concurrent analysis (4 specialist personas)
+    5. Calculate PR Health Score from all agent findings
+    6. Merge, deduplicate, and filter all findings per repo config
+    7. Post review back to GitHub (inline comments + health score summary)
+    8. Persist PullRequestReview and ReviewFindings in database
     """
     start_time = time.time()
-    logger.info(f"Starting review pipeline for {owner}/{repo_name}#{pr_number} (head: {head_sha[:7]})")
+    logger.info(
+        f"Starting multi-agent review pipeline for {owner}/{repo_name}#{pr_number} "
+        f"(head: {head_sha[:7]})"
+    )
 
     # 1. Get Installation Token
     token = await get_installation_access_token(installation_id)
@@ -100,34 +101,75 @@ async def execute_pr_review_pipeline(
     custom_instructions = config.custom_instructions if config else ""
     max_comments = config.max_comments_per_pr if config else 15
 
-    # 4. Analyze with Gemini
-    gemini_result = await analyze_pull_request(
+    # 4. Run multi-agent concurrent analysis
+    findings_by_role = await run_multi_agent_analysis(
         context=context,
         custom_instructions=custom_instructions or "",
-        max_findings=max_comments,
     )
 
-    # 5. Filter findings based on repo config
-    filtered_findings = _filter_findings_by_config(gemini_result.findings, config)
+    # 5. Calculate PR Health Score
+    health_score: HealthScore = calculate_health_score(findings_by_role)
+    logger.info(
+        f"Health score for {owner}/{repo_name}#{pr_number}: "
+        f"{health_score.total}/100 ({health_score.grade}) — "
+        f"{health_score.total_findings} findings, "
+        f"{health_score.total_blocking} blocking"
+    )
 
-    # Adjust verdict if auto_request_changes is enabled
+    # 6. Merge all findings and filter
+    all_findings: list[GeminiFinding] = []
+    for role_findings in findings_by_role.values():
+        all_findings.extend(role_findings)
+
+    # Deduplicate by (file_path, line_number, title)
+    seen = set()
+    unique_findings = []
+    for f in all_findings:
+        key = (f.file_path, f.line_number, f.title[:60])
+        if key not in seen:
+            seen.add(key)
+            unique_findings.append(f)
+
+    # Sort: blocking first, then suggestion, then nitpick
+    severity_order = {"blocking": 0, "suggestion": 1, "nitpick": 2}
+    unique_findings.sort(key=lambda f: severity_order.get(f.severity, 3))
+
+    filtered_findings = _filter_findings_by_config(unique_findings, config)
+
+    # 7. Build verdict with health score context
     has_blocking = any(f.severity == "blocking" for f in filtered_findings)
     if config and config.auto_request_changes and has_blocking:
         verdict = "REQUEST_CHANGES"
+    elif health_score.total >= 90 and not filtered_findings:
+        verdict = "APPROVE"
     elif not filtered_findings:
         verdict = "APPROVE"
     else:
-        verdict = gemini_result.verdict
+        verdict = "COMMENT"
+
+    # Build enhanced summary with health score badge
+    health_badge = (
+        f"## 🏥 PR Health Score: **{health_score.total}/100** ({health_score.grade})\n\n"
+        f"{health_score.recommendation}\n\n"
+        "| Dimension | Score | Findings |\n"
+        "|-----------|-------|----------|\n"
+    )
+    for dim in health_score.dimensions:
+        health_badge += (
+            f"| {dim.emoji} {dim.dimension.title()} "
+            f"| {dim.score:.0f}/100 "
+            f"| {dim.finding_count} ({dim.blocking_count} blocking) |\n"
+        )
 
     final_review = GeminiReviewResponse(
-        summary=gemini_result.summary,
+        summary=health_badge,
         verdict=verdict,
         findings=filtered_findings,
     )
 
     duration_ms = int((time.time() - start_time) * 1000)
 
-    # 6. Post Review to GitHub
+    # 8. Post Review to GitHub
     await post_github_review(
         owner=owner,
         repo=repo_name,
@@ -138,7 +180,7 @@ async def execute_pr_review_pipeline(
         processing_duration_ms=duration_ms,
     )
 
-    # 7. Persist Review and Findings to Database
+    # 9. Persist Review and Findings to Database
     blocking_cnt = sum(1 for f in filtered_findings if f.severity == "blocking")
     suggestion_cnt = sum(1 for f in filtered_findings if f.severity == "suggestion")
     nitpick_cnt = sum(1 for f in filtered_findings if f.severity == "nitpick")
@@ -181,7 +223,8 @@ async def execute_pr_review_pipeline(
         await db.refresh(review_record)
 
     logger.info(
-        f"Completed review pipeline for {owner}/{repo_name}#{pr_number} in {duration_ms}ms "
-        f"— {len(filtered_findings)} findings persisted"
+        f"Completed multi-agent review for {owner}/{repo_name}#{pr_number} "
+        f"in {duration_ms}ms → {len(filtered_findings)} findings persisted "
+        f"| Health: {health_score.grade} ({health_score.total}/100)"
     )
     return review_record
