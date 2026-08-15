@@ -1,23 +1,58 @@
 import json
 from typing import Any, Dict
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.security import verify_github_signature
-from app.db.session import get_db
+from app.db.session import async_session_factory, get_db
 from app.models.config import RepoConfig
 from app.models.installation import Installation
 from app.models.repository import Repository
+from app.services.review_service import execute_pr_review_pipeline
 
 router = APIRouter()
+
+
+async def _run_review_in_background(
+    owner: str,
+    repo_name: str,
+    pr_number: int,
+    pr_title: str,
+    pr_author: str,
+    pr_body: str,
+    head_sha: str,
+    base_sha: str,
+    installation_id: int,
+):
+    """Background task runner with its own isolated database session."""
+    try:
+        async with async_session_factory() as db_session:
+            await execute_pr_review_pipeline(
+                owner=owner,
+                repo_name=repo_name,
+                pr_number=pr_number,
+                pr_title=pr_title,
+                pr_author=pr_author,
+                pr_body=pr_body,
+                head_sha=head_sha,
+                base_sha=base_sha,
+                installation_id=installation_id,
+                db=db_session,
+            )
+    except Exception as e:
+        logger.error(
+            f"Error during background review pipeline for {owner}/{repo_name}#{pr_number}: {e}",
+            exc_info=True,
+        )
 
 
 @router.post("/webhooks/github", status_code=status.HTTP_200_OK, tags=["Webhooks"])
 async def handle_github_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_github_event: str = Header(..., alias="X-GitHub-Event"),
     x_hub_signature_256: str = Header(None, alias="X-Hub-Signature-256"),
     x_github_delivery: str = Header(None, alias="X-GitHub-Delivery"),
@@ -25,7 +60,7 @@ async def handle_github_webhook(
 ) -> Dict[str, Any]:
     """
     Receives and authenticates incoming GitHub Webhook events.
-    Verifies HMAC-SHA256 signature in constant time.
+    Dispatches asynchronous PR reviews for pull_request events.
     """
     raw_body = await request.body()
 
@@ -114,9 +149,16 @@ async def handle_github_webhook(
         inst_data = payload_dict.get("installation", {})
 
         pr_number = pr_data.get("number")
-        pr_title = pr_data.get("title")
+        pr_title = pr_data.get("title", "")
+        pr_body = pr_data.get("body", "") or ""
+        pr_author = pr_data.get("user", {}).get("login", "unknown")
+        head_sha = pr_data.get("head", {}).get("sha", "")
+        base_sha = pr_data.get("base", {}).get("sha", "")
+
         repo_id = repo_data.get("id")
-        repo_full_name = repo_data.get("full_name")
+        repo_name = repo_data.get("name", "unknown")
+        owner_name = repo_data.get("owner", {}).get("login", "unknown")
+        repo_full_name = repo_data.get("full_name", f"{owner_name}/{repo_name}")
         inst_id = inst_data.get("id")
 
         logger.info(
@@ -125,6 +167,7 @@ async def handle_github_webhook(
 
         if action in ("opened", "synchronize", "reopened"):
             if inst_id and repo_id:
+                # 1. Upsert Installation
                 inst_stmt = select(Installation).where(
                     Installation.github_installation_id == inst_id
                 )
@@ -135,13 +178,14 @@ async def handle_github_webhook(
                     account = inst_data.get("account", {})
                     installation = Installation(
                         github_installation_id=inst_id,
-                        account_name=account.get("login", repo_data.get("owner", {}).get("login", "unknown")),
+                        account_name=account.get("login", owner_name),
                         account_type=account.get("type", "User"),
                         account_avatar_url=account.get("avatar_url"),
                     )
                     db.add(installation)
                     await db.flush()
 
+                # 2. Upsert Repository
                 repo_stmt = select(Repository).where(
                     Repository.github_repo_id == repo_id
                 )
@@ -152,9 +196,9 @@ async def handle_github_webhook(
                     repository = Repository(
                         installation_id=installation.id,
                         github_repo_id=repo_id,
-                        name=repo_data.get("name", "unknown"),
-                        full_name=repo_full_name or "unknown",
-                        owner_name=repo_data.get("owner", {}).get("login", "unknown"),
+                        name=repo_name,
+                        full_name=repo_full_name,
+                        owner_name=owner_name,
                         private=repo_data.get("private", False),
                         default_branch=repo_data.get("default_branch", "main"),
                     )
@@ -165,6 +209,22 @@ async def handle_github_webhook(
                     db.add(config)
 
                 await db.commit()
+
+                # 3. Schedule asynchronous review pipeline
+                if settings.GEMINI_API_KEY and settings.GITHUB_APP_ID:
+                    background_tasks.add_task(
+                        _run_review_in_background,
+                        owner=owner_name,
+                        repo_name=repo_name,
+                        pr_number=pr_number,
+                        pr_title=pr_title,
+                        pr_author=pr_author,
+                        pr_body=pr_body,
+                        head_sha=head_sha,
+                        base_sha=base_sha,
+                        installation_id=inst_id,
+                    )
+                    logger.info(f"Dispatched background review task for {repo_full_name}#{pr_number}")
 
             return {
                 "status": "received",
