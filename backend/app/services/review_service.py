@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.health_score import HealthScore, calculate_health_score
 from app.agents.multi_reviewer import run_multi_agent_analysis
+from app.analysis.ast_analyzer import analyze_python_file
 from app.core.logging import logger
 from app.github.auth import get_installation_access_token
 from app.github.commenter import post_github_review
@@ -41,6 +42,57 @@ def _filter_findings_by_config(
     return filtered[: config.max_comments_per_pr]
 
 
+def _run_ast_analysis_on_files(context) -> list[GeminiFinding]:
+    """Run AST static analysis on changed Python files and generate structured findings."""
+    static_findings = []
+    for file in context.changed_files:
+        if not file.filename.endswith(".py"):
+            continue
+        if not file.file_content:
+            continue
+
+        ast_res = analyze_python_file(
+            after_source=file.file_content,
+            file_path=file.filename,
+            before_source=file.before_content if hasattr(file, "before_content") else None,
+        )
+
+        # Convert breaking changes to findings
+        for bc in ast_res.breaking_changes:
+            static_findings.append(
+                GeminiFinding(
+                    file_path=bc.file_path,
+                    line_number=1,
+                    side="RIGHT",
+                    severity=bc.severity,
+                    category="logic_bug",
+                    title=f"Breaking API Change: {bc.kind.replace('_', ' ').title()}",
+                    explanation=bc.detail,
+                    suggested_fix=None,
+                )
+            )
+
+        # Convert complexity violations to findings
+        for cv in ast_res.complexity_violations:
+            static_findings.append(
+                GeminiFinding(
+                    file_path=cv.file_path,
+                    line_number=cv.line,
+                    side="RIGHT",
+                    severity="suggestion" if cv.cyclomatic_complexity > 15 else "nitpick",
+                    category="performance" if cv.is_too_long else "style",
+                    title=f"High Cyclomatic Complexity ({cv.cyclomatic_complexity}) in `{cv.function_name}`",
+                    explanation=(
+                        f"Function `{cv.function_name}` has a cyclomatic complexity of {cv.cyclomatic_complexity} "
+                        f"(threshold is 10) and spans {cv.lines_of_code} lines. "
+                        f"Consider refactoring into smaller, single-responsibility helper functions."
+                    ),
+                    suggested_fix=None,
+                )
+            )
+    return static_findings
+
+
 async def execute_pr_review_pipeline(
     owner: str,
     repo_name: str,
@@ -54,16 +106,17 @@ async def execute_pr_review_pipeline(
     db: AsyncSession,
 ) -> PullRequestReview:
     """
-    Full automated PR Review Execution Pipeline (Multi-Agent + Notifications):
+    Full automated PR Review Execution Pipeline (Multi-Agent + AST Static Analysis + Notifications):
     1. Authenticate with GitHub App and get installation token
     2. Build context: fetch changed files, unified diffs, and file contents
     3. Load repository config
     4. Run multi-agent concurrent analysis (4 specialist personas)
-    5. Calculate PR Health Score
-    6. Merge, deduplicate, and filter findings
-    7. Post review to GitHub
-    8. Persist to database
-    9. Fire-and-forget: dispatch Slack/webhook notifications
+    5. Run AST static analysis (breaking changes + cyclomatic complexity)
+    6. Calculate PR Health Score
+    7. Merge, deduplicate, and filter findings
+    8. Post review to GitHub
+    9. Persist to database
+    10. Fire-and-forget: dispatch Slack/webhook notifications
     """
     start_time = time.time()
     logger.info(
@@ -108,7 +161,20 @@ async def execute_pr_review_pipeline(
         custom_instructions=custom_instructions or "",
     )
 
-    # 5. Calculate PR Health Score
+    # 5. Run AST static analysis
+    static_findings = _run_ast_analysis_on_files(context)
+    if static_findings:
+        findings_by_role.setdefault("style", []).extend(
+            [f for f in static_findings if f.category == "style"]
+        )
+        findings_by_role.setdefault("performance", []).extend(
+            [f for f in static_findings if f.category == "performance"]
+        )
+        findings_by_role.setdefault("security", []).extend(
+            [f for f in static_findings if f.category not in ["style", "performance"]]
+        )
+
+    # 6. Calculate PR Health Score
     health_score: HealthScore = calculate_health_score(findings_by_role)
     logger.info(
         f"Health score for {owner}/{repo_name}#{pr_number}: "
@@ -117,7 +183,7 @@ async def execute_pr_review_pipeline(
         f"{health_score.total_blocking} blocking"
     )
 
-    # 6. Merge, deduplicate, and filter findings
+    # 7. Merge, deduplicate, and filter findings
     all_findings: list[GeminiFinding] = []
     for role_findings in findings_by_role.values():
         all_findings.extend(role_findings)
@@ -167,7 +233,7 @@ async def execute_pr_review_pipeline(
 
     duration_ms = int((time.time() - start_time) * 1000)
 
-    # 7. Post Review to GitHub
+    # 8. Post Review to GitHub
     await post_github_review(
         owner=owner,
         repo=repo_name,
@@ -178,7 +244,7 @@ async def execute_pr_review_pipeline(
         processing_duration_ms=duration_ms,
     )
 
-    # 8. Persist Review and Findings to Database
+    # 9. Persist Review and Findings to Database
     blocking_cnt = sum(1 for f in filtered_findings if f.severity == "blocking")
     suggestion_cnt = sum(1 for f in filtered_findings if f.severity == "suggestion")
     nitpick_cnt = sum(1 for f in filtered_findings if f.severity == "nitpick")
@@ -220,7 +286,7 @@ async def execute_pr_review_pipeline(
         await db.commit()
         await db.refresh(review_record)
 
-    # 9. Fire-and-forget: Slack + webhook notifications
+    # 10. Fire-and-forget: Slack + webhook notifications
     pr_url = f"https://github.com/{full_name}/pull/{pr_number}"
     asyncio.create_task(
         dispatch_review_notifications(
