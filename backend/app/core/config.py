@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     PROJECT_NAME: str = "AI Code Reviewer API"
-    VERSION: str = "1.0.0"
+    VERSION: str = "1.1.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
 
@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     GITHUB_APP_ID: Optional[str] = None
     GITHUB_APP_PRIVATE_KEY: Optional[str] = None
     GITHUB_WEBHOOK_SECRET: Optional[str] = None
+
+    # Notification integrations (optional)
+    SLACK_WEBHOOK_URL: Optional[str] = None
+    NOTIFICATION_WEBHOOK_URL: Optional[str] = None
 
     @computed_field
     def is_sqlite(self) -> bool:
