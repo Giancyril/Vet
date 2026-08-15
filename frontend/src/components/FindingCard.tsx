@@ -8,8 +8,12 @@ import {
   ChevronUp,
   Copy,
   FileCode2,
+  Flame,
+  GitPullRequestDraft,
   Info,
+  ShieldAlert,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { Finding } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -23,6 +27,20 @@ export function FindingCard({ finding, defaultExpanded = true }: FindingCardProp
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(defaultExpanded);
 
+  const isBreaking =
+    finding.title.toLowerCase().includes("breaking") ||
+    finding.explanation.toLowerCase().includes("breaking change");
+
+  const isComplexity =
+    finding.title.toLowerCase().includes("cyclomatic") ||
+    finding.explanation.toLowerCase().includes("cyclomatic complexity");
+
+  const isSecurity =
+    finding.category === "security" ||
+    finding.title.toLowerCase().includes("security") ||
+    finding.title.toLowerCase().includes("secret") ||
+    finding.title.toLowerCase().includes("vulnerability");
+
   const handleCopy = () => {
     if (finding.suggested_fix) {
       navigator.clipboard.writeText(finding.suggested_fix);
@@ -32,6 +50,34 @@ export function FindingCard({ finding, defaultExpanded = true }: FindingCardProp
   };
 
   const getSeverityConfig = (severity: string) => {
+    if (isBreaking) {
+      return {
+        pill: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+        cardBorder: "border-rose-500/40 hover:border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.1)]",
+        bgAccent: "bg-rose-500/5",
+        icon: <Flame className="w-3.5 h-3.5 text-rose-400" />,
+        label: "Breaking Change",
+      };
+    }
+    if (isSecurity && severity === "blocking") {
+      return {
+        pill: "bg-red-500/10 text-red-400 border-red-500/30",
+        cardBorder: "border-red-500/40 hover:border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.1)]",
+        bgAccent: "bg-red-500/5",
+        icon: <ShieldAlert className="w-3.5 h-3.5 text-red-400" />,
+        label: "Security Vulnerability",
+      };
+    }
+    if (isComplexity) {
+      return {
+        pill: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+        cardBorder: "border-purple-500/30 hover:border-purple-500/50",
+        bgAccent: "bg-purple-500/5",
+        icon: <Zap className="w-3.5 h-3.5 text-purple-400" />,
+        label: "AST Complexity",
+      };
+    }
+
     switch (severity) {
       case "blocking":
         return {
