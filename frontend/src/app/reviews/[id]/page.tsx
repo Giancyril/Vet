@@ -7,6 +7,7 @@ import { VerdictBadge } from "@/components/VerdictBadge";
 import { FindingCard } from "@/components/FindingCard";
 import { PRChatBot } from "@/components/PRChatBot";
 import { CompanionPRModal } from "@/components/CompanionPRModal";
+import { SecurityShield } from "@/components/SecurityShield";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -85,6 +86,11 @@ export default async function ReviewDetailPage({ params }: PageProps) {
             {review.summary_markdown}
           </div>
         </div>
+      </div>
+
+      {/* Security Shield Section */}
+      <div className="mb-8">
+        <SecurityShield findings={review.findings} />
       </div>
 
       {/* Findings section */}
