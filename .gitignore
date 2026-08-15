@@ -27,8 +27,9 @@ out/
 .vercel
 
 # Environment variables
+.env
 .env*
-!.env.example
+*.env
 
 # Misc & OS
 .DS_Store

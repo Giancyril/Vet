@@ -95,10 +95,10 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Configure environment
-cp .env.example .env
+# Configure your .env file in backend/.env
 ```
 
-Edit `.env` with your credentials:
+Fill in `backend/.env` with your credentials:
 ```env
 ENVIRONMENT="development"
 DATABASE_URL="sqlite+aiosqlite:///./reviewer.db"
