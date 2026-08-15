@@ -6,7 +6,7 @@ from app.db.session import async_session_factory
 from app.models.config import RepoConfig
 from app.models.installation import Installation
 from app.models.repository import Repository
-from app.schemas.gemini import GeminiFinding, GeminiReviewResponse
+from app.schemas.gemini import GeminiFinding
 from app.services.review_service import _filter_findings_by_config, execute_pr_review_pipeline
 
 
@@ -71,10 +71,8 @@ async def test_execute_pr_review_pipeline_end_to_end():
         session.add(cfg)
         await session.commit()
 
-    mock_gemini_review = GeminiReviewResponse(
-        summary="Review completed successfully.",
-        verdict="REQUEST_CHANGES",
-        findings=[
+    mock_findings = {
+        "security": [
             GeminiFinding(
                 file_path="src/login.py",
                 line_number=42,
@@ -86,7 +84,10 @@ async def test_execute_pr_review_pipeline_end_to_end():
                 suggested_fix="return hmac.compare_digest(pwd, stored_pwd)",
             )
         ],
-    )
+        "performance": [],
+        "style": [],
+        "testing": [],
+    }
 
     with patch(
         "app.services.review_service.get_installation_access_token",
@@ -95,8 +96,8 @@ async def test_execute_pr_review_pipeline_end_to_end():
         "app.services.review_service.build_pr_context",
         new=AsyncMock(),
     ), patch(
-        "app.services.review_service.analyze_pull_request",
-        new=AsyncMock(return_value=mock_gemini_review),
+        "app.services.review_service.run_multi_agent_analysis",
+        new=AsyncMock(return_value=mock_findings),
     ), patch(
         "app.services.review_service.post_github_review",
         new=AsyncMock(return_value={"id": 98765}),

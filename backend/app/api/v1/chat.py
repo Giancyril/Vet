@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_async_session
+from app.db.session import get_db
 from app.models.finding import ReviewFinding
 from app.models.review import PullRequestReview
 from app.schemas.chat import ChatRequest, ChatResponse
@@ -23,7 +23,7 @@ router = APIRouter()
 async def chat_about_review(
     review_id: str,
     request: ChatRequest,
-    db: AsyncSession = Depends(get_async_session),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Ask the AI questions about a specific PR review.

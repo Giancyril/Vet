@@ -12,7 +12,7 @@ interface CompanionPRModalProps {
 interface PlanData {
   review_id: string;
   branch_name: string;
-  total_fixes: int;
+  total_fixes: number;
   patches: Array<{
     file_path: string;
     diff: string;
