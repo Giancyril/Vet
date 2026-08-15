@@ -57,33 +57,33 @@ A production-grade, enterprise-ready automated AI Code Review and Pull Request I
 ```mermaid
 graph TD
     subgraph GitHub ["GitHub Platform"]
-        PR[Pull Request Event] --> Webhook[GitHub Webhook POST]
-        App[GitHub App API]
+        PR["Pull Request Event"] --> Webhook["GitHub Webhook POST"]
+        App["GitHub App API"]
     end
 
     subgraph Backend ["FastAPI Backend (/api/v1)"]
-        Router[Webhook Router]
-        Auth[RS256 JWT & Installation Auth]
-        Diff[Diff Fetcher & Filter]
+        Router["Webhook Router"]
+        Auth["RS256 JWT & Installation Auth"]
+        Diff["Diff Fetcher & Filter"]
 
-        SecretScan[Pre-LLM Secret Scanner]
-        ASTScan[AST Breaking Change & Complexity Analyzer]
-        MultiAgent[Gemini 2.5 Multi-Agent Committee]
+        SecretScan["Pre-LLM Secret Scanner"]
+        ASTScan["AST Breaking Change & Complexity Analyzer"]
+        MultiAgent["Gemini 2.5 Multi-Agent Committee"]
 
-        HealthCalc[PR Health Score Calculator]
-        Remediation[Auto-Remediation Engine]
-        ChatSvc[PR Chatbot Service]
-        NotifySvc[Notification Dispatcher]
+        HealthCalc["PR Health Score Calculator"]
+        Remediation["Auto-Remediation Engine"]
+        ChatSvc["PR Chatbot Service"]
+        NotifySvc["Notification Dispatcher"]
 
-        DB[(SQLite / PostgreSQL DB)]
+        DB[("SQLite / PostgreSQL DB")]
     end
 
     subgraph Frontend ["Next.js 15 Dashboard"]
-        Dash[Review Dashboard]
-        Gauge[Health Score Gauge]
-        Shield[Security Shield Widget]
-        Modal[Companion PR Modal]
-        ChatWidget[Interactive PR Chatbot]
+        Dash["Review Dashboard"]
+        Gauge["Health Score Gauge"]
+        Shield["Security Shield Widget"]
+        Modal["Companion PR Modal"]
+        ChatWidget["Interactive PR Chatbot"]
     end
 
     Webhook --> Router
@@ -117,36 +117,36 @@ graph TD
 ```mermaid
 graph LR
     subgraph BE_Modules ["Backend Module Flow"]
-        Config[app.core.config] --> Database[app.db.session]
-        Database --> Models[app.models]
-        Models --> Schemas[app.schemas]
+        Config["app.core.config"] --> Database["app.db.session"]
+        Database --> Models["app.models"]
+        Models --> Schemas["app.schemas"]
 
-        GHAuth[app.github.auth] --> DiffFetcher[app.github.diff_fetcher]
-        DiffFetcher --> SecretScanner[app.security.secret_scanner]
-        DiffFetcher --> ASTAnalyzer[app.analysis.ast_analyzer]
-        DiffFetcher --> Personas[app.agents.personas]
+        GHAuth["app.github.auth"] --> DiffFetcher["app.github.diff_fetcher"]
+        DiffFetcher --> SecretScanner["app.security.secret_scanner"]
+        DiffFetcher --> ASTAnalyzer["app.analysis.ast_analyzer"]
+        DiffFetcher --> Personas["app.agents.personas"]
 
-        Personas --> MultiReviewer[app.agents.multi_reviewer]
-        MultiReviewer --> HealthScore[app.agents.health_score]
+        Personas --> MultiReviewer["app.agents.multi_reviewer"]
+        MultiReviewer --> HealthScore["app.agents.health_score"]
 
-        SecretScanner --> ReviewService[app.services.review_service]
+        SecretScanner --> ReviewService["app.services.review_service"]
         ASTAnalyzer --> ReviewService
         HealthScore --> ReviewService
 
-        ReviewService --> Commenter[app.github.commenter]
-        ReviewService --> Notifications[app.services.notification_service]
-        ReviewService --> RemediationSvc[app.services.remediation_service]
-        RemediationSvc --> RemediationPR[app.github.remediation_pr]
+        ReviewService --> Commenter["app.github.commenter"]
+        ReviewService --> Notifications["app.services.notification_service"]
+        ReviewService --> RemediationSvc["app.services.remediation_service"]
+        RemediationSvc --> RemediationPR["app.github.remediation_pr"]
     end
 
     subgraph FE_Modules ["Frontend Module Flow"]
-        APIClient[lib/api.ts] --> ReviewList[app/page.tsx]
-        APIClient --> ReviewDetail[app/reviews/[id]/page.tsx]
-        ReviewDetail --> HealthGauge[components/HealthScoreGauge.tsx]
-        ReviewDetail --> SecShield[components/SecurityShield.tsx]
-        ReviewDetail --> Findings[components/FindingCard.tsx]
-        ReviewDetail --> PRModal[components/CompanionPRModal.tsx]
-        ReviewDetail --> ChatUI[components/PRChatBot.tsx]
+        APIClient["lib/api.ts"] --> ReviewList["app/page.tsx"]
+        APIClient --> ReviewDetail["app/reviews/[id]/page.tsx"]
+        ReviewDetail --> HealthGauge["components/HealthScoreGauge.tsx"]
+        ReviewDetail --> SecShield["components/SecurityShield.tsx"]
+        ReviewDetail --> Findings["components/FindingCard.tsx"]
+        ReviewDetail --> PRModal["components/CompanionPRModal.tsx"]
+        ReviewDetail --> ChatUI["components/PRChatBot.tsx"]
     end
 ```
 
@@ -182,7 +182,7 @@ AI Code Reviewer/
 │   │   │   ├── auth.py             # JWT app auth & installation access tokens
 │   │   │   ├── commenter.py        # Inline comment & review summary formatter
 │   │   │   ├── diff_fetcher.py     # Diff parser & context builder
-│   │   │   └── remediation_pr.py   # Companion branch & PR creation via HTTPX
+│   │   └── remediation_pr.py   # Companion branch & PR creation via HTTPX
 │   │   ├── models/                 # SQLAlchemy ORM Models
 │   │   │   ├── config.py           # RepoConfig model
 │   │   │   ├── finding.py          # ReviewFinding model
