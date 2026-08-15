@@ -16,6 +16,8 @@ from app.models.finding import ReviewFinding
 from app.models.repository import Repository
 from app.models.review import PullRequestReview
 from app.schemas.gemini import GeminiFinding, GeminiReviewResponse
+from app.security.owasp_rules import classify_owasp
+from app.security.secret_scanner import scan_diff_for_secrets
 from app.services.notification_service import dispatch_review_notifications
 
 
@@ -42,6 +44,33 @@ def _filter_findings_by_config(
     return filtered[: config.max_comments_per_pr]
 
 
+def _scan_secrets_in_diff(context) -> list[GeminiFinding]:
+    """Run regex and entropy-based secret scanning across all changed file diffs."""
+    secret_findings = []
+    for file in context.changed_files:
+        if not file.patch:
+            continue
+        leaks = scan_diff_for_secrets(file.filename, file.patch)
+        for leak in leaks:
+            secret_findings.append(
+                GeminiFinding(
+                    file_path=leak.file_path,
+                    line_number=leak.line_number,
+                    side="RIGHT",
+                    severity="blocking",
+                    category="security",
+                    title=f"🚨 Secret Leak: {leak.secret_type}",
+                    explanation=(
+                        f"{leak.description} Found pattern: `{leak.masked_secret}`. "
+                        f"Immediately revoke, invalidate, and rotate this secret. "
+                        f"Never commit credentials directly into source repositories."
+                    ),
+                    suggested_fix="os.environ.get('SECRET_KEY_NAME')",
+                )
+            )
+    return secret_findings
+
+
 def _run_ast_analysis_on_files(context) -> list[GeminiFinding]:
     """Run AST static analysis on changed Python files and generate structured findings."""
     static_findings = []
@@ -57,7 +86,6 @@ def _run_ast_analysis_on_files(context) -> list[GeminiFinding]:
             before_source=file.before_content if hasattr(file, "before_content") else None,
         )
 
-        # Convert breaking changes to findings
         for bc in ast_res.breaking_changes:
             static_findings.append(
                 GeminiFinding(
@@ -72,7 +100,6 @@ def _run_ast_analysis_on_files(context) -> list[GeminiFinding]:
                 )
             )
 
-        # Convert complexity violations to findings
         for cv in ast_res.complexity_violations:
             static_findings.append(
                 GeminiFinding(
@@ -106,17 +133,19 @@ async def execute_pr_review_pipeline(
     db: AsyncSession,
 ) -> PullRequestReview:
     """
-    Full automated PR Review Execution Pipeline (Multi-Agent + AST Static Analysis + Notifications):
+    Full automated PR Review Execution Pipeline:
     1. Authenticate with GitHub App and get installation token
     2. Build context: fetch changed files, unified diffs, and file contents
     3. Load repository config
-    4. Run multi-agent concurrent analysis (4 specialist personas)
+    4. Run pre-LLM secret scanner (zero latency secret detection)
     5. Run AST static analysis (breaking changes + cyclomatic complexity)
-    6. Calculate PR Health Score
-    7. Merge, deduplicate, and filter findings
-    8. Post review to GitHub
-    9. Persist to database
-    10. Fire-and-forget: dispatch Slack/webhook notifications
+    6. Run multi-agent concurrent analysis (4 specialist personas)
+    7. Tag findings with OWASP Top 10 classifications
+    8. Calculate PR Health Score
+    9. Merge, deduplicate, and filter findings
+    10. Post review to GitHub
+    11. Persist to database
+    12. Fire-and-forget: dispatch Slack/webhook notifications
     """
     start_time = time.time()
     logger.info(
@@ -155,14 +184,22 @@ async def execute_pr_review_pipeline(
     custom_instructions = config.custom_instructions if config else ""
     max_comments = config.max_comments_per_pr if config else 15
 
-    # 4. Run multi-agent concurrent analysis
+    # 4. Pre-LLM Secret Scanning
+    secret_findings = _scan_secrets_in_diff(context)
+
+    # 5. AST Static Analysis
+    static_findings = _run_ast_analysis_on_files(context)
+
+    # 6. Multi-Agent Concurrent Analysis
     findings_by_role = await run_multi_agent_analysis(
         context=context,
         custom_instructions=custom_instructions or "",
     )
 
-    # 5. Run AST static analysis
-    static_findings = _run_ast_analysis_on_files(context)
+    # Combine into findings_by_role
+    if secret_findings:
+        findings_by_role.setdefault("security", []).extend(secret_findings)
+
     if static_findings:
         findings_by_role.setdefault("style", []).extend(
             [f for f in static_findings if f.category == "style"]
@@ -174,7 +211,7 @@ async def execute_pr_review_pipeline(
             [f for f in static_findings if f.category not in ["style", "performance"]]
         )
 
-    # 6. Calculate PR Health Score
+    # 7. Calculate PR Health Score
     health_score: HealthScore = calculate_health_score(findings_by_role)
     logger.info(
         f"Health score for {owner}/{repo_name}#{pr_number}: "
@@ -183,7 +220,7 @@ async def execute_pr_review_pipeline(
         f"{health_score.total_blocking} blocking"
     )
 
-    # 7. Merge, deduplicate, and filter findings
+    # 8. Merge, deduplicate, and annotate OWASP
     all_findings: list[GeminiFinding] = []
     for role_findings in findings_by_role.values():
         all_findings.extend(role_findings)
@@ -194,6 +231,10 @@ async def execute_pr_review_pipeline(
         key = (f.file_path, f.line_number, f.title[:60])
         if key not in seen:
             seen.add(key)
+            # Annotate with OWASP rule if security finding
+            owasp = classify_owasp(f.title, f.explanation)
+            if owasp and "OWASP" not in f.explanation:
+                f.explanation += f"\n\n🛡️ **OWASP Top 10**: `{owasp.code}` ({owasp.name})"
             unique_findings.append(f)
 
     severity_order = {"blocking": 0, "suggestion": 1, "nitpick": 2}
@@ -233,7 +274,7 @@ async def execute_pr_review_pipeline(
 
     duration_ms = int((time.time() - start_time) * 1000)
 
-    # 8. Post Review to GitHub
+    # 9. Post Review to GitHub
     await post_github_review(
         owner=owner,
         repo=repo_name,
@@ -244,7 +285,7 @@ async def execute_pr_review_pipeline(
         processing_duration_ms=duration_ms,
     )
 
-    # 9. Persist Review and Findings to Database
+    # 10. Persist Review and Findings to Database
     blocking_cnt = sum(1 for f in filtered_findings if f.severity == "blocking")
     suggestion_cnt = sum(1 for f in filtered_findings if f.severity == "suggestion")
     nitpick_cnt = sum(1 for f in filtered_findings if f.severity == "nitpick")
@@ -286,7 +327,7 @@ async def execute_pr_review_pipeline(
         await db.commit()
         await db.refresh(review_record)
 
-    # 10. Fire-and-forget: Slack + webhook notifications
+    # 11. Fire-and-forget: Slack + webhook notifications
     pr_url = f"https://github.com/{full_name}/pull/{pr_number}"
     asyncio.create_task(
         dispatch_review_notifications(
