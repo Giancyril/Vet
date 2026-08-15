@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Optional
 from sqlalchemy import select
@@ -11,11 +12,10 @@ from app.github.commenter import post_github_review
 from app.github.diff_fetcher import build_pr_context
 from app.models.config import RepoConfig
 from app.models.finding import ReviewFinding
-from app.models.installation import Installation
 from app.models.repository import Repository
 from app.models.review import PullRequestReview
 from app.schemas.gemini import GeminiFinding, GeminiReviewResponse
-from app.services.gemini_reviewer import analyze_pull_request
+from app.services.notification_service import dispatch_review_notifications
 
 
 def _filter_findings_by_config(
@@ -54,15 +54,16 @@ async def execute_pr_review_pipeline(
     db: AsyncSession,
 ) -> PullRequestReview:
     """
-    Full automated PR Review Execution Pipeline (Multi-Agent Edition):
+    Full automated PR Review Execution Pipeline (Multi-Agent + Notifications):
     1. Authenticate with GitHub App and get installation token
     2. Build context: fetch changed files, unified diffs, and file contents
-    3. Load repository config (min severity, custom instructions, category filters)
+    3. Load repository config
     4. Run multi-agent concurrent analysis (4 specialist personas)
-    5. Calculate PR Health Score from all agent findings
-    6. Merge, deduplicate, and filter all findings per repo config
-    7. Post review back to GitHub (inline comments + health score summary)
-    8. Persist PullRequestReview and ReviewFindings in database
+    5. Calculate PR Health Score
+    6. Merge, deduplicate, and filter findings
+    7. Post review to GitHub
+    8. Persist to database
+    9. Fire-and-forget: dispatch Slack/webhook notifications
     """
     start_time = time.time()
     logger.info(
@@ -116,12 +117,11 @@ async def execute_pr_review_pipeline(
         f"{health_score.total_blocking} blocking"
     )
 
-    # 6. Merge all findings and filter
+    # 6. Merge, deduplicate, and filter findings
     all_findings: list[GeminiFinding] = []
     for role_findings in findings_by_role.values():
         all_findings.extend(role_findings)
 
-    # Deduplicate by (file_path, line_number, title)
     seen = set()
     unique_findings = []
     for f in all_findings:
@@ -130,13 +130,11 @@ async def execute_pr_review_pipeline(
             seen.add(key)
             unique_findings.append(f)
 
-    # Sort: blocking first, then suggestion, then nitpick
     severity_order = {"blocking": 0, "suggestion": 1, "nitpick": 2}
     unique_findings.sort(key=lambda f: severity_order.get(f.severity, 3))
-
     filtered_findings = _filter_findings_by_config(unique_findings, config)
 
-    # 7. Build verdict with health score context
+    # Build verdict
     has_blocking = any(f.severity == "blocking" for f in filtered_findings)
     if config and config.auto_request_changes and has_blocking:
         verdict = "REQUEST_CHANGES"
@@ -147,7 +145,7 @@ async def execute_pr_review_pipeline(
     else:
         verdict = "COMMENT"
 
-    # Build enhanced summary with health score badge
+    # Build health score summary block
     health_badge = (
         f"## 🏥 PR Health Score: **{health_score.total}/100** ({health_score.grade})\n\n"
         f"{health_score.recommendation}\n\n"
@@ -169,7 +167,7 @@ async def execute_pr_review_pipeline(
 
     duration_ms = int((time.time() - start_time) * 1000)
 
-    # 8. Post Review to GitHub
+    # 7. Post Review to GitHub
     await post_github_review(
         owner=owner,
         repo=repo_name,
@@ -180,7 +178,7 @@ async def execute_pr_review_pipeline(
         processing_duration_ms=duration_ms,
     )
 
-    # 9. Persist Review and Findings to Database
+    # 8. Persist Review and Findings to Database
     blocking_cnt = sum(1 for f in filtered_findings if f.severity == "blocking")
     suggestion_cnt = sum(1 for f in filtered_findings if f.severity == "suggestion")
     nitpick_cnt = sum(1 for f in filtered_findings if f.severity == "nitpick")
@@ -221,6 +219,22 @@ async def execute_pr_review_pipeline(
 
         await db.commit()
         await db.refresh(review_record)
+
+    # 9. Fire-and-forget: Slack + webhook notifications
+    pr_url = f"https://github.com/{full_name}/pull/{pr_number}"
+    asyncio.create_task(
+        dispatch_review_notifications(
+            pr_title=pr_title,
+            pr_number=pr_number,
+            repo_full_name=full_name,
+            pr_author=pr_author,
+            health_grade=health_score.grade,
+            health_score=health_score.total,
+            total_findings=len(filtered_findings),
+            blocking_count=blocking_cnt,
+            pr_url=pr_url,
+        )
+    )
 
     logger.info(
         f"Completed multi-agent review for {owner}/{repo_name}#{pr_number} "
