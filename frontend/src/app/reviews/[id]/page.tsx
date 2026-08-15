@@ -5,6 +5,8 @@ import { fetchReviewDetail } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { FindingCard } from "@/components/FindingCard";
+import { PRChatBot } from "@/components/PRChatBot";
+import { CompanionPRModal } from "@/components/CompanionPRModal";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -21,19 +23,28 @@ export default async function ReviewDetailPage({ params }: PageProps) {
   const blockingFindings = review.findings.filter((f) => f.severity === "blocking");
   const suggestionFindings = review.findings.filter((f) => f.severity === "suggestion");
   const nitpickFindings = review.findings.filter((f) => f.severity === "nitpick");
+  const fixableCount = review.findings.filter((f) => Boolean(f.suggested_fix)).length;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-      {/* Back button */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors mb-6"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to Reviews
-      </Link>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-16">
+      {/* Back button & Action toolbar */}
+      <div className="flex items-center justify-between mb-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Reviews
+        </Link>
+
+        <CompanionPRModal
+          reviewId={review.id}
+          prNumber={review.pr_number}
+          fixableCount={fixableCount}
+        />
+      </div>
 
       {/* Header card */}
-      <div className="rounded-xl border border-border bg-surface p-6 mb-8">
+      <div className="rounded-xl border border-border bg-surface p-6 mb-8 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-border">
           <div>
             <div className="flex items-center gap-3">
@@ -68,11 +79,11 @@ export default async function ReviewDetailPage({ params }: PageProps) {
         {/* Executive summary */}
         <div className="pt-6">
           <h3 className="text-xs uppercase font-medium text-gray-400 tracking-wider mb-2">
-            AI Executive Summary
+            AI Executive Summary & Health Report
           </h3>
-          <p className="text-sm text-gray-200 leading-relaxed bg-surface-raised p-4 rounded-lg border border-border">
+          <div className="text-sm text-gray-200 leading-relaxed bg-surface-raised p-4 rounded-lg border border-border whitespace-pre-wrap">
             {review.summary_markdown}
-          </p>
+          </div>
         </div>
       </div>
 
@@ -130,6 +141,9 @@ export default async function ReviewDetailPage({ params }: PageProps) {
           </div>
         )}
       </div>
+
+      {/* Interactive Floating ChatBot */}
+      <PRChatBot reviewId={review.id} />
     </div>
   );
 }
