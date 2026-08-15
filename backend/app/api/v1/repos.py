@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.config import RepoConfig
 from app.models.repository import Repository
 from app.models.review import PullRequestReview
+from app.schemas.config import RepoConfigSchema, RepoConfigUpdate
 from app.schemas.repo import RepositorySchema
 
 router = APIRouter()
@@ -19,14 +20,17 @@ async def list_repositories(
     db: AsyncSession = Depends(get_db),
 ):
     """Lists all monitored GitHub repositories with config and review counts."""
-    stmt = select(Repository).options(selectinload(Repository.config)).order_by(Repository.updated_at.desc())
+    stmt = (
+        select(Repository)
+        .options(selectinload(Repository.config))
+        .order_by(Repository.updated_at.desc())
+    )
     if is_active is not None:
         stmt = stmt.where(Repository.is_active == is_active)
 
     res = await db.execute(stmt)
     repos = res.scalars().all()
 
-    # Get review counts per repo
     count_stmt = select(
         PullRequestReview.repository_id, func.count(PullRequestReview.id).label("count")
     ).group_by(PullRequestReview.repository_id)
@@ -91,3 +95,83 @@ async def get_repository(repo_id: str, db: AsyncSession = Depends(get_db)):
         "config": repo.config,
         "total_reviews_count": total_count,
     })
+
+
+@router.put(
+    "/repos/{repo_id}/config",
+    response_model=RepoConfigSchema,
+    tags=["Repositories"],
+)
+async def update_repository_config(
+    repo_id: str,
+    update_data: RepoConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Updates reviewer settings for a specific repository."""
+    # Find repo
+    repo_stmt = select(Repository).where(Repository.id == repo_id)
+    repo_res = await db.execute(repo_stmt)
+    repo = repo_res.scalar_one_or_none()
+
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository {repo_id} not found",
+        )
+
+    # Find or create config
+    cfg_stmt = select(RepoConfig).where(RepoConfig.repository_id == repo_id)
+    cfg_res = await db.execute(cfg_stmt)
+    config = cfg_res.scalar_one_or_none()
+
+    if not config:
+        config = RepoConfig(repository_id=repo_id)
+        db.add(config)
+
+    # Apply updates
+    if update_data.min_severity is not None:
+        if update_data.min_severity not in ("blocking", "suggestion", "nitpick"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="min_severity must be 'blocking', 'suggestion', or 'nitpick'",
+            )
+        config.min_severity = update_data.min_severity
+
+    if update_data.auto_request_changes is not None:
+        config.auto_request_changes = update_data.auto_request_changes
+
+    if update_data.enabled_categories is not None:
+        config.enabled_categories = update_data.enabled_categories
+
+    if update_data.max_comments_per_pr is not None:
+        config.max_comments_per_pr = max(1, min(50, update_data.max_comments_per_pr))
+
+    if update_data.custom_instructions is not None:
+        config.custom_instructions = update_data.custom_instructions
+
+    await db.commit()
+    await db.refresh(config)
+    return config
+
+
+@router.patch("/repos/{repo_id}/toggle", tags=["Repositories"])
+async def toggle_repository_active(
+    repo_id: str,
+    is_active: bool,
+    db: AsyncSession = Depends(get_db),
+):
+    """Enables or disables automatic AI code reviews for a repository."""
+    stmt = select(Repository).where(Repository.id == repo_id)
+    res = await db.execute(stmt)
+    repo = res.scalar_one_or_none()
+
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository {repo_id} not found",
+        )
+
+    repo.is_active = is_active
+    await db.commit()
+    await db.refresh(repo)
+    return {"id": repo.id, "full_name": repo.full_name, "is_active": repo.is_active}

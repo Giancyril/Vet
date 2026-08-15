@@ -43,6 +43,15 @@ export interface ReviewDetail extends ReviewSummary {
   findings: Finding[];
 }
 
+export interface RepoConfigData {
+  id?: string;
+  min_severity: "blocking" | "suggestion" | "nitpick";
+  auto_request_changes: boolean;
+  enabled_categories: string[];
+  max_comments_per_pr: number;
+  custom_instructions?: string;
+}
+
 export interface Repository {
   id: string;
   installation_id: string;
@@ -55,14 +64,7 @@ export interface Repository {
   is_active: boolean;
   created_at: string;
   total_reviews_count: number;
-  config?: {
-    id: string;
-    min_severity: string;
-    auto_request_changes: boolean;
-    enabled_categories: string[];
-    max_comments_per_pr: number;
-    custom_instructions?: string;
-  };
+  config?: RepoConfigData;
 }
 
 export interface DashboardStats {
@@ -120,5 +122,36 @@ export async function fetchRepositories(): Promise<Repository[]> {
     return await res.json();
   } catch {
     return [];
+  }
+}
+
+export async function updateRepoConfig(
+  repoId: string,
+  config: Partial<RepoConfigData>
+): Promise<RepoConfigData | null> {
+  try {
+    const res = await fetch(`${API_BASE}/repos/${repoId}/config`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function toggleRepoActive(
+  repoId: string,
+  isActive: boolean
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/repos/${repoId}/toggle?is_active=${isActive}`, {
+      method: "PATCH",
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
