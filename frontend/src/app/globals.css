@@ -3,8 +3,46 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-background text-gray-100 antialiased selection:bg-purple-500/30;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  :root {
+    --background: 240 10% 4%;
+    --surface: 240 10% 7%;
+    --surface-raised: 240 10% 10%;
+    --border: 240 8% 15%;
   }
+
+  body {
+    background-color: #08090D;
+    color: #F3F4F6;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom subtle scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #232736;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #374151;
+  }
+}
+
+/* Subtle glow utilities */
+.glow-purple {
+  box-shadow: 0 0 40px -10px rgba(139, 92, 246, 0.15);
+}
+
+.glow-red {
+  box-shadow: 0 0 40px -10px rgba(239, 68, 68, 0.15);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 40px -10px rgba(16, 185, 129, 0.15);
 }
