@@ -29,6 +29,29 @@ class ReviewMetrics(BaseModel):
     processing_duration_ms: int
 
 
+# ─── Health Score schemas ─────────────────────────────────────────────────────
+
+class DimensionScoreSchema(BaseModel):
+    """Per-dimension breakdown of the PR health score."""
+    dimension: str
+    score: float
+    finding_count: int
+    blocking_count: int
+    emoji: str
+
+
+class HealthScoreSchema(BaseModel):
+    """Composite PR health score from multi-agent analysis."""
+    total: float = Field(..., ge=0, le=100, description="Composite health score 0-100")
+    grade: str = Field(..., description="Letter grade: A+, A, B, C, D, or F")
+    total_findings: int
+    total_blocking: int
+    recommendation: str
+    dimensions: List[DimensionScoreSchema] = Field(default_factory=list)
+
+
+# ─── Review schemas ───────────────────────────────────────────────────────────
+
 class ReviewSummarySchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +66,7 @@ class ReviewSummarySchema(BaseModel):
     verdict: str
     summary_markdown: str
     metrics: ReviewMetrics
+    health_score: Optional[HealthScoreSchema] = None
     created_at: datetime
 
 
