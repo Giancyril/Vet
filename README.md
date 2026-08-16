@@ -1,6 +1,6 @@
 # Vet — AI Code Reviewer
 
-A production-grade, enterprise-ready automated AI Code Review and Pull Request Intelligence platform powered by Google Gemini 2.5, async FastAPI, and Next.js 15. Features a 4-persona concurrent Multi-Agent Review Committee (Security, Performance, Clean Code, Testing), dynamic PR Health Scoring (0–100 composite grades with dimension breakdowns), AST-powered breaking change and cyclomatic complexity detection, pre-LLM zero-latency secret scanning with Shannon entropy filtering, full OWASP Top 10 compliance classification with CWE tagging, automated 1-click companion PR remediation with unified patch generation, real-time WebSocket review streaming telemetry with live agent radar status, PR Blast Radius & dependency impact visualizer, AI-powered semantic PR changelog and Conventional Commits generator, automated pytest test suite synthesizer, custom repository policy engine with AST rule enforcement, and a high-performance dark-mode analytics dashboard.
+A production-grade, enterprise-ready automated AI Code Review and Pull Request Intelligence platform powered by Google Gemini 2.5, async FastAPI, and Next.js 15. Features a 4-persona concurrent Multi-Agent Review Committee (Security, Performance, Clean Code, Testing), dynamic PR Health Scoring (0–100 composite grades with dimension breakdowns), AST-powered breaking change and cyclomatic complexity detection, pre-LLM zero-latency secret scanning with Shannon entropy filtering, full OWASP Top 10 compliance classification with CWE tagging, automated 1-click companion PR remediation with unified patch generation, real-time WebSocket review streaming telemetry with live agent radar status, PR Blast Radius & dependency impact visualizer, AI-powered semantic PR changelog and Conventional Commits generator, automated pytest test suite synthesizer, custom repository policy engine with AST rule enforcement, multi-channel notification dispatch (Slack Block Kit & HTTP webhooks), and a high-performance dark-mode analytics dashboard.
 
 ## Features
 
@@ -191,6 +191,100 @@ graph LR
 
 ---
 
+## Features in Detail
+
+### 1. Multi-Agent Review Committee & PR Health Scoring
+Instead of relying on a single generic prompt, Vet executes four specialist AI personas in parallel (`asyncio.gather`):
+- **Security Auditor**: Zero-tolerance analysis of auth bypass, sanitization, injection vectors, and permission boundaries.
+- **Performance Architect**: Identifies N+1 query patterns, async event-loop blocking calls, unindexed filters, and memory leaks.
+- **Clean Code Guardian**: Enforces DRY, readability, idiomatic Python patterns, single responsibility, and naming clarity.
+- **Test Coverage Specialist**: Checks whether public APIs, boundary conditions, and error branches have corresponding test assertions.
+
+The findings are synthesized into a **PR Health Score (0–100)**:
+$$	ext{Score} = 100 - (	ext{Security Penalties} 	imes 0.35 + 	ext{Performance Penalties} 	imes 0.25 + 	ext{Clean Code Penalties} 	imes 0.20 + 	ext{Test Penalties} 	imes 0.20)$$
+
+### 2. Real-Time WebSocket Review Streaming
+Vet opens a bidirectional WebSocket channel (`/api/v1/ws/reviews/{id}`) upon review initialization. As each stage finishes, telemetry events (`agent_started`, `secret_scanned`, `ast_analyzed`, `finding_discovered`, `health_calculated`, `review_finished`) are pushed immediately to the frontend:
+- **Radar Telemetry**: Shows active pulse sweeps and glowing status tags for currently executing agents.
+- **Live Terminal Log**: Streams color-coded structured events with sub-millisecond timestamps.
+- **Zero Polling Overhead**: Eliminates periodic HTTP polling, reducing server load and network chatter.
+
+### 3. PR Blast Radius & Dependency Impact Visualizer
+Using static Python Abstract Syntax Tree (AST) import traversal, Vet calculates the downstream blast radius of every PR:
+- **Impact Index (0–100)**: Quantifies the overall risk level of changes based on modified files, broken exports, and affected endpoints.
+- **Public Export Tracking**: Warns when public functions or classes are renamed or deleted from base branches.
+- **Interactive Visualizer**: Renders color-coded impact badges (Low, Medium, High, Critical) and node lists on the review dashboard.
+
+### 4. Automated PR Changelog & Semantic Release Note Generator
+Vet analyzes unified diffs and review findings to synthesize complete release materials:
+- **Conventional Commits**: Categorizes changes into `feat:`, `fix:`, `refactor:`, `perf:`, `docs:`, and `breaking:`.
+- **Customer Release Notes**: Generates polished, non-technical release notes explaining user-facing benefits.
+- **Technical Migration Guides**: Step-by-step upgrade instructions for breaking API changes.
+- **1-Click GitHub PR Sync**: Automatically appends the generated changelog directly to the GitHub PR body.
+
+### 5. AI Test Generator & Synthetic Edge-Case Synthesizer
+For every modified Python file, Vet uses Gemini 2.5 to generate complete, runnable `pytest` test suites:
+- **Fixture & Mock Integration**: Automatically mocks external services, database sessions, and HTTP clients.
+- **Parameterized Edge Cases**: Injects boundary tests for `None`, empty inputs, large collections, and malformed data.
+- **1-Click Code Download**: Lets developers copy test code to the clipboard or download `.py` test files directly.
+
+### 6. Custom Repository Policy Engine & AST Rule Builder
+Engineering leads can enforce custom coding policies before code review begins:
+- **Built-in Templates**: Out-of-the-box support for banning `print()` statements, enforcing UTC-aware datetime, disallowing bare `except:`, requiring docstrings, requiring type annotations, and banning hardcoded localhost URLs.
+- **Custom Regex & AST Evaluator**: Allows custom rule creation with configurable severity (`error`, `warning`, `info`).
+- **Live Code Tester**: Interactive sandbox in the `/config` page permitting real-time rule testing against sample code snippets.
+
+### 7. Interactive PR Chatbot Concierge
+Developers can discuss review findings directly with an integrated Gemini chatbot (`PRChatBot.tsx`):
+- **Sliding History Window**: Maintains context across 6 conversation turns.
+- **Grounding on PR Context**: Has direct access to PR diffs, review findings, AST complexity metrics, and health scores.
+- **Code Fix Assistance**: Explains complex security rationale and generates alternative code implementations on demand.
+
+### 8. Auto-Remediation Engine & 1-Click Companion PRs
+For every actionable review finding with a suggested fix:
+- **Unified Diff Generation**: Uses `difflib.unified_diff` with reverse line-index math to prevent offset drift during multi-location replacements.
+- **Automated Branch Provisioning**: Creates a dedicated branch (`vet/fix-pr-<id>`) on GitHub.
+- **1-Click Companion PR**: Opens a pull request against the developer's feature branch containing all approved fixes.
+
+### 9. Pre-LLM Secret Scanner & OWASP Top 10 Classifier
+- **Pre-LLM Secret Masking**: Zero-latency regex and Shannon entropy scanner that runs before sending prompts to Gemini, preventing accidental credential leaks to external APIs.
+- **OWASP Top 10 Mapping**: Categorizes security findings into standard OWASP categories (A01 Broken Access Control to A10 SSRF) with standardized CWE numbers.
+
+---
+
+## Development Roadmap
+
+### Phase 1: Foundation (Completed)
+- GitHub App webhook receiver with HMAC-SHA256 signature verification.
+- Unified diff parser and file filter excluding lockfiles, binary assets, and minified bundles.
+- GitHub App RS256 JWT authentication and installation access token management.
+- Structured review posting with inline suggestion comments.
+
+### Phase 2: Intelligence & Multi-Agent Committee (Completed)
+- Four concurrent specialist agent personas (Security Auditor, Performance Architect, Clean Code Guardian, Test Specialist).
+- PR Health Score calculator (0–100 composite score, letter grades, dimension penalties).
+- Next.js 15 dark-mode dashboard with animated canvas health score radial gauge.
+
+### Phase 3: AST Static Analysis & Auto-Remediation (Completed)
+- Python AST breaking change and function signature difference detector.
+- Cyclomatic complexity calculator and maintainability metric badges.
+- Unified patch remediation engine and 1-click companion PR creator.
+
+### Phase 4: Security Shield & Communication Hub (Completed)
+- Pre-LLM zero-latency secret scanner with Shannon entropy filtering.
+- OWASP Top 10 compliance classification and CWE tagging.
+- Slack Block Kit and generic HTTP webhook notification dispatcher.
+- Interactive Gemini-powered PR Chatbot assistant with sliding context window.
+
+### Phase 5: Real-Time Telemetry & Enterprise Governance (Completed)
+- **WebSocket Review Stream**: Sub-second live event streaming with animated agent radar and event log terminal.
+- **PR Blast Radius Visualizer**: Static dependency tree analyzer calculating impact indices and affected endpoints.
+- **Semantic Changelog Generator**: Conventional Commits release notes generator with 1-click GitHub PR sync.
+- **AI Test Generator**: Automated `pytest` test suite synthesizer with mocks and boundary tests.
+- **Custom Policy Engine**: Configurable repository policy evaluator with built-in templates and live rule sandbox.
+
+---
+
 ## Project Structure
 
 ```
@@ -253,7 +347,7 @@ AI Code Reviewer/
 │   │   │   ├── notification_service.py # Slack & webhook dispatcher
 │   │   │   ├── prompt_builder.py   # Review prompt generator
 │   │   │   ├── remediation_service.py  # Diff patch builder & inline fix applier
-│   │   │   ├── review_service.py   # Master review coordination pipeline
+│   │   │   └── review_service.py   # Master review coordination pipeline
 │   │   │   └── test_generator.py   # AI pytest test suite synthesizer
 │   │   └── main.py                 # FastAPI application factory & lifespan
 │   ├── tests/                      # 127 Automated Tests
