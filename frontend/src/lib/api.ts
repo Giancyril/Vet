@@ -36,6 +36,8 @@ export interface Finding {
   suggested_fix?: string;
   github_comment_id?: number;
   is_resolved: boolean;
+  is_breaking_change?: boolean;
+  cyclomatic_complexity?: number;
   created_at: string;
 }
 
