@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Check, Info, Save, Settings, Shield, Sparkles } from "lucide-react";
 import { fetchRepositories, updateRepoConfig, Repository, RepoConfigData } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { PolicyEngineManager } from "@/components/PolicyEngineManager";
 
 const CATEGORIES = [
   { id: "security", label: "Security & Vulnerabilities", desc: "Hardcoded secrets, SQL injection, XSS, unsafe inputs" },
@@ -252,6 +253,15 @@ function ConfigContent() {
               placeholder="e.g. Always ensure database queries use async transactions. Prefer arrow functions in TypeScript. Flag any missing error boundaries in React."
               className="w-full bg-background border border-border rounded-lg p-3.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500 font-mono"
             />
+          </div>
+
+          {/* Policy Engine Rules Section */}
+          <div className="pt-2">
+            <h2 className="text-lg font-bold text-white mb-2">Repository Policy Engine</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Enforce bespoke codebase rules (regex patterns and AST static checks) evaluated on every PR.
+            </p>
+            {selectedRepoId && <PolicyEngineManager repoId={selectedRepoId} />}
           </div>
 
           {/* Save Action Bar */}

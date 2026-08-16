@@ -6,8 +6,10 @@ import { formatDate } from "@/lib/utils";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { FindingCard } from "@/components/FindingCard";
 import { PRChatBot } from "@/components/PRChatBot";
-import { CompanionPRModal } from "@/components/CompanionPRModal";
+import { ReviewToolbar } from "@/components/ReviewToolbar";
 import { SecurityShield } from "@/components/SecurityShield";
+import { BlastRadiusGraph } from "@/components/BlastRadiusGraph";
+import { LiveAgentStream } from "@/components/LiveAgentStream";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -26,10 +28,27 @@ export default async function ReviewDetailPage({ params }: PageProps) {
   const nitpickFindings = review.findings.filter((f) => f.severity === "nitpick");
   const fixableCount = review.findings.filter((f) => Boolean(f.suggested_fix)).length;
 
+  // Synthesize blast radius data from findings
+  const modifiedFiles = Array.from(new Set(review.findings.map((f) => f.file_path).filter(Boolean)));
+  const breakingFindings = review.findings.filter((f) => Boolean(f.is_breaking_change || f.title.toLowerCase().includes('breaking')));
+  const blastRadiusData = {
+    review_id: review.id,
+    modified_files: modifiedFiles,
+    downstream_files: modifiedFiles.map((f) => `[importers] ${f}`),
+    impact_index: Math.min(modifiedFiles.length * 15 + breakingFindings.length * 20, 100),
+    impact_level: breakingFindings.length > 0 ? "High" : modifiedFiles.length > 4 ? "Medium" : "Low",
+    affected_endpoints: review.findings
+      .filter((f) => f.title.toLowerCase().includes("endpoint") || f.title.toLowerCase().includes("route"))
+      .map((f) => f.title),
+    breaking_exports: breakingFindings.map((f) => `${f.file_path}::${f.title}`),
+    summary: `${modifiedFiles.length} file(s) modified, ${breakingFindings.length} breaking change(s) flagged.`,
+    dependency_graph: {},
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-16">
       {/* Back button & Action toolbar */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
@@ -37,7 +56,7 @@ export default async function ReviewDetailPage({ params }: PageProps) {
           <ArrowLeft className="w-4 h-4" /> Back to Reviews
         </Link>
 
-        <CompanionPRModal
+        <ReviewToolbar
           reviewId={review.id}
           prNumber={review.pr_number}
           fixableCount={fixableCount}
@@ -86,6 +105,16 @@ export default async function ReviewDetailPage({ params }: PageProps) {
             {review.summary_markdown}
           </div>
         </div>
+      </div>
+
+      {/* Live Agent Stream Activity */}
+      <div className="mb-8">
+        <LiveAgentStream reviewId={review.id} />
+      </div>
+
+      {/* Blast Radius Section */}
+      <div className="mb-8">
+        <BlastRadiusGraph data={blastRadiusData} />
       </div>
 
       {/* Security Shield Section */}
