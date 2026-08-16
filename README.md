@@ -12,25 +12,25 @@ A production-grade, enterprise-ready automated AI Code Review and Pull Request I
 - **Dashboard & Repository Management**: Full management UI and REST APIs for toggling active repositories, customizing review instructions per repository, filtering severity thresholds, and adjusting max comments per PR.
 
 ### Advanced Features
-- **👥 Multi-Agent Review Committee**: Concurrently orchestrates four specialized AI personas running in parallel via `asyncio.gather` for comprehensive multidimensional coverage:
-  - **Security Auditor (🛡️)**: Strict analyzer focused exclusively on credential leaks, SQL/command injection, deserialization, auth bypass, and missing sanitization.
-  - **Performance Architect (⚡)**: Identifies N+1 query patterns, async event-loop blocking I/O, memory leaks, high algorithmic complexity, and missing pagination.
-  - **Clean Code Guardian (✨)**: Enforces maintainability, DRY principles, naming clarity, single responsibility, and error-handling idioms.
-  - **Test Coverage Specialist (🧪)**: Detects untested public signatures, missing boundary/edge-case tests, brittle assertions, and flaky test patterns.
-- **🏥 PR Health Score Calculator**: Aggregates multi-agent findings into a weighted 0–100 health composite score (`Security: 35%`, `Performance: 25%`, `Clean Code: 20%`, `Testing: 20%`) with letter grades (`A+`, `A`, `B`, `C`, `D`, `F`), dimension penalty breakdowns, and actionable merge advice.
-- **📊 Real-Time Review Streaming & Agent Radar**: WebSocket-powered live activity feed (`LiveAgentStream.tsx`) that streams real-time review progress directly to the browser, displaying live radar sweeps, active agent status badges, and sub-second event logs as files are inspected.
-- **🌐 PR Blast Radius & Dependency Impact Visualizer**: Static dependency and import graph analyzer (`blast_radius.py` & `BlastRadiusGraph.tsx`) that computes an overall **Blast Radius Impact Index** (0–100), detects modified public symbols, highlights breaking exports, and maps downstream module dependencies.
-- **📜 Automated PR Changelog & Release Notes Generator**: Gemini 2.5 powered changelog synthesizer (`changelog_service.py` & `ChangelogModal.tsx`) producing Conventional Commits entries (`feat:`, `fix:`, `refactor:`, `breaking:`), customer-facing release notes, technical migration guides, and 1-click GitHub PR description sync.
-- **🧪 AI Test Generator & Synthetic Edge-Case Synthesizer**: AI test synthesis engine (`test_generator.py` & `TestGeneratorModal.tsx`) that inspects modified functions via AST and generates complete, runnable `pytest` test suites with fixtures, mocks, and parameterized boundary assertions.
-- **🎯 Custom Repository Policy Engine & AST Rule Builder**: Configurable repository policy evaluator (`policy_engine.py` & `PolicyEngineManager.tsx`) supporting 6 built-in rule templates (banning raw `print()`, enforcing UTC on `datetime.now()`, disallowing bare `except:`, requiring docstrings/type hints, blocking hardcoded URLs) plus custom regex/AST rules with an integrated live rule tester.
-- **💬 Interactive PR Chatbot Concierge**: Context-aware floating assistant widget (`PRChatBot.tsx`) connected to `POST /api/v1/reviews/{id}/chat`. Retains a sliding 6-message history window so developers can ask clarifying questions, explore rationale, or request code examples directly on specific review reports.
-- **🔔 Notification Hub (Slack & Webhooks)**: Fire-and-forget asynchronous notification service that sends formatted Slack Block Kit cards and generic HTTP webhook payloads with direct PR jump links, health badges, and severity breakdowns upon review completion.
-- **🔍 AST-Based Breaking Change Detection**: Static analysis engine (`ast_analyzer.py`) that parses Python Abstract Syntax Trees to detect removed public functions and deleted required parameters between base and head branches, flagging breaking API contracts before merge.
-- **⚡ Cyclomatic Complexity Tracker**: Evaluates branching decision points (`If`, `While`, `For`, `BoolOp`, `ExceptHandler`, `comprehensions`) across all functions in the diff. Flags functions exceeding maintainability thresholds (CC > 10) or length thresholds (> 50 lines).
-- **🪄 Auto-Remediation Engine**: Translates actionable suggested fixes into clean, unified git patches (`difflib.unified_diff`) using reverse line-indexing math to prevent offset drift during multi-location replacements.
-- **🚀 1-Click Companion PR Creator**: Automatically provisions a target branch (`vet/fix-pr-<id>`), commits remediated files via GitHub REST API, and opens a companion Pull Request against the developer's feature branch.
-- **🔒 Pre-LLM Secret Scanner**: Zero-latency regex and Shannon entropy scanner that inspects added diff lines before sending prompts to Gemini. Instantly flags and masks AWS keys, GitHub PATs, Stripe secret keys, OpenAI/Gemini tokens, and Private RSA/SSH keys.
-- **🛡️ OWASP Top 10 Compliance Classifier**: Automatically matches findings against the standard OWASP Top 10 catalog (A01 Broken Access Control to A10 SSRF) and tags findings with standardized CWE references.
+- **Multi-Agent Review Committee**: Concurrently orchestrates four specialized AI personas running in parallel via `asyncio.gather` for comprehensive multidimensional coverage:
+  - **Security Auditor**: Strict analyzer focused exclusively on credential leaks, SQL/command injection, deserialization, auth bypass, and missing sanitization.
+  - **Performance Architect**: Identifies N+1 query patterns, async event-loop blocking I/O, memory leaks, high algorithmic complexity, and missing pagination.
+  - **Clean Code Guardian**: Enforces maintainability, DRY principles, naming clarity, single responsibility, and error-handling idioms.
+  - **Test Coverage Specialist**: Detects untested public signatures, missing boundary/edge-case tests, brittle assertions, and flaky test patterns.
+- **PR Health Score Calculator**: Aggregates multi-agent findings into a weighted 0–100 health composite score (`Security: 35%`, `Performance: 25%`, `Clean Code: 20%`, `Testing: 20%`) with letter grades (`A+`, `A`, `B`, `C`, `D`, `F`), dimension penalty breakdowns, and actionable merge advice.
+- **Real-Time Review Streaming & Agent Radar**: WebSocket-powered live activity feed (`LiveAgentStream.tsx`) that streams real-time review progress directly to the browser, displaying live radar sweeps, active agent status badges, and sub-second event logs as files are inspected.
+- **PR Blast Radius & Dependency Impact Visualizer**: Static dependency and import graph analyzer (`blast_radius.py` & `BlastRadiusGraph.tsx`) that computes an overall **Blast Radius Impact Index** (0–100), detects modified public symbols, highlights breaking exports, and maps downstream module dependencies.
+- **Automated PR Changelog & Release Notes Generator**: Gemini 2.5 powered changelog synthesizer (`changelog_service.py` & `ChangelogModal.tsx`) producing Conventional Commits entries (`feat:`, `fix:`, `refactor:`, `breaking:`), customer-facing release notes, technical migration guides, and 1-click GitHub PR description sync.
+- **AI Test Generator & Synthetic Edge-Case Synthesizer**: AI test synthesis engine (`test_generator.py` & `TestGeneratorModal.tsx`) that inspects modified functions via AST and generates complete, runnable `pytest` test suites with fixtures, mocks, and parameterized boundary assertions.
+- **Custom Repository Policy Engine & AST Rule Builder**: Configurable repository policy evaluator (`policy_engine.py` & `PolicyEngineManager.tsx`) supporting 6 built-in rule templates (banning raw `print()`, enforcing UTC on `datetime.now()`, disallowing bare `except:`, requiring docstrings/type hints, blocking hardcoded URLs) plus custom regex/AST rules with an integrated live rule tester.
+- **Interactive PR Chatbot Concierge**: Context-aware floating assistant widget (`PRChatBot.tsx`) connected to `POST /api/v1/reviews/{id}/chat`. Retains a sliding 6-message history window so developers can ask clarifying questions, explore rationale, or request code examples directly on specific review reports.
+- **Notification Hub (Slack & Webhooks)**: Fire-and-forget asynchronous notification service that sends formatted Slack Block Kit cards and generic HTTP webhook payloads with direct PR jump links, health badges, and severity breakdowns upon review completion.
+- **AST-Based Breaking Change Detection**: Static analysis engine (`ast_analyzer.py`) that parses Python Abstract Syntax Trees to detect removed public functions and deleted required parameters between base and head branches, flagging breaking API contracts before merge.
+- **Cyclomatic Complexity Tracker**: Evaluates branching decision points (`If`, `While`, `For`, `BoolOp`, `ExceptHandler`, `comprehensions`) across all functions in the diff. Flags functions exceeding maintainability thresholds (CC > 10) or length thresholds (> 50 lines).
+- **Auto-Remediation Engine**: Translates actionable suggested fixes into clean, unified git patches (`difflib.unified_diff`) using reverse line-indexing math to prevent offset drift during multi-location replacements.
+- **1-Click Companion PR Creator**: Automatically provisions a target branch (`vet/fix-pr-<id>`), commits remediated files via GitHub REST API, and opens a companion Pull Request against the developer's feature branch.
+- **Pre-LLM Secret Scanner**: Zero-latency regex and Shannon entropy scanner that inspects added diff lines before sending prompts to Gemini. Instantly flags and masks AWS keys, GitHub PATs, Stripe secret keys, OpenAI/Gemini tokens, and Private RSA/SSH keys.
+- **OWASP Top 10 Compliance Classifier**: Automatically matches findings against the standard OWASP Top 10 catalog (A01 Broken Access Control to A10 SSRF) and tags findings with standardized CWE references.
 - **Health Score Gauge Component**: High-performance animated HTML5 canvas radial gauge (`HealthScoreGauge.tsx`) with gradient strokes, grade glow effects, and dynamic dimension progress indicators.
 - **Security Shield Dashboard Widget**: Dedicated real-time security widget (`SecurityShield.tsx`) displaying leak statuses, credential rotation warnings, and compliance breakdowns.
 
@@ -447,34 +447,14 @@ The backend exposes the following RESTful and WebSocket API routes:
 
 ## Quick Start
 
-### 1. Environment Configuration
-Create a `.env` file in the project root:
-```ini
-ENVIRONMENT=development
-DATABASE_URL=sqlite+aiosqlite:///./reviewer.db
-
-# Google Gemini API
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.5-flash
-
-# GitHub App Credentials
-GITHUB_APP_ID=your_app_id
-GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
-GITHUB_WEBHOOK_SECRET=your_webhook_secret
-
-# Optional Notification Integrations
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
-NOTIFICATION_WEBHOOK_URL=https://your-webhook-endpoint.com/review
-```
-
-### 2. Run Backend Server
+### 1. Run Backend Server
 ```bash
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Run Frontend Dashboard
+### 2. Run Frontend Dashboard
 ```bash
 cd frontend
 npm install
