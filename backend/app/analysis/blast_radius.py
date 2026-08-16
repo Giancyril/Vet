@@ -160,7 +160,7 @@ def calculate_blast_radius(
     return BlastRadiusReport(
         modified_files=modified_files,
         downstream_files=downstream_files,
-        impact_index=round(impact_index, 1),
+        impact_index=float(round(impact_index, 1)),
         impact_level=impact_level,
         affected_endpoints=affected_endpoints,
         breaking_exports=breaking_exports,

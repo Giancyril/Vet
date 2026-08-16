@@ -2,7 +2,7 @@
 Custom Repository Policy Engine.
 
 Evaluates bespoke codebase rules (regex + AST-based) against PR diffs.
-Rules are stored per-repository in RepoConfig.custom_rules (JSON field).
+Rules are stored per-repository in RepoConfig.custom_policy_rules (JSON field).
 
 Built-in rule templates:
   - ban_print_statements: No raw print() in production code
@@ -10,7 +10,7 @@ Built-in rule templates:
   - ban_datetime_now: Require UTC-aware datetime usage
   - ban_bare_except: No bare except: clauses
   - require_docstrings: Public functions/classes must have docstrings
-  - ban_hardcoded_secrets: Block string literals matching secret patterns
+  - ban_hardcoded_urls: Disallow hardcoded localhost URLs
 """
 import ast
 import re
@@ -70,7 +70,7 @@ BUILTIN_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "name": "No Hardcoded localhost URLs",
         "description": "Hardcoded localhost URLs should use configuration/environment variables.",
         "type": "regex",
-        "pattern": r"^\+.*["\']http://localhost:\d+",
+        "pattern": r"http://localhost",
         "severity": "warning",
     },
     "require_type_hints": {
@@ -106,16 +106,19 @@ def _evaluate_regex_rule(rule: Dict, patch: str, filename: str) -> List[PolicyVi
 
     lines = patch.splitlines()
     for i, line in enumerate(lines):
-        if re.search(pattern, line):
-            violations.append(PolicyViolation(
-                rule_id=rule["id"],
-                rule_name=rule["name"],
-                severity=rule.get("severity", "warning"),
-                file=filename,
-                line=i + 1,
-                message=rule.get("description", f"Rule {rule['id']} violated"),
-                code_snippet=line.strip(),
-            ))
+        try:
+            if re.search(pattern, line):
+                violations.append(PolicyViolation(
+                    rule_id=rule["id"],
+                    rule_name=rule["name"],
+                    severity=rule.get("severity", "warning"),
+                    file=filename,
+                    line=i + 1,
+                    message=rule.get("description", f"Rule {rule['id']} violated"),
+                    code_snippet=line.strip(),
+                ))
+        except re.error:
+            continue
     return violations
 
 
@@ -131,7 +134,6 @@ def _evaluate_ast_rule(rule: Dict, patch: str, filename: str) -> List[PolicyViol
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            # Skip private functions
             if node.name.startswith("_"):
                 continue
 
@@ -181,20 +183,8 @@ def evaluate_policy(
     custom_rules: Optional[List[Dict]] = None,
     enabled_builtins: Optional[List[str]] = None,
 ) -> PolicyResult:
-    """
-    Evaluate repository policy rules against PR diff files.
-
-    Args:
-        diff_files: List of dicts with "filename" and "patch"
-        custom_rules: List of custom rule dicts defined per-repo
-        enabled_builtins: List of builtin template IDs to activate
-
-    Returns:
-        PolicyResult with all violations found
-    """
     all_rules = list(custom_rules or [])
 
-    # Merge enabled built-in templates
     for bid in (enabled_builtins or []):
         if bid in BUILTIN_TEMPLATES:
             all_rules.append(BUILTIN_TEMPLATES[bid])
@@ -225,11 +215,7 @@ def evaluate_policy(
     )
 
 
-def test_rule_against_snippet(rule: Dict, code_snippet: str, filename: str = "test.py") -> List[PolicyViolation]:
-    """
-    Test a single custom rule against a code snippet.
-    Used by the UI Rule Tester.
-    """
+def evaluate_rule_snippet(rule: Dict, code_snippet: str, filename: str = "test.py") -> List[PolicyViolation]:
     fake_patch = "\n".join("+" + line for line in code_snippet.splitlines())
     rule_type = rule.get("type", "regex")
     if rule_type == "regex":

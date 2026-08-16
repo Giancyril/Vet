@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.security.policy_engine import (
-    evaluate_policy, test_rule_against_snippet, BUILTIN_TEMPLATES, PolicyViolation
+    evaluate_policy, evaluate_rule_snippet, BUILTIN_TEMPLATES, PolicyViolation
 )
 
 
@@ -111,7 +111,7 @@ class TestPolicyEngine:
         )
         assert result.rules_evaluated == 2
 
-    def test_test_rule_against_snippet_regex(self):
+    def test_evaluate_rule_snippet_regex(self):
         rule = {
             "id": "no_debugger",
             "name": "No debugger statements",
@@ -119,10 +119,10 @@ class TestPolicyEngine:
             "pattern": r"\bdebugger\b",
             "severity": "error",
         }
-        violations = test_rule_against_snippet(rule, "debugger;\nx = 1;", "app.js")
+        violations = evaluate_rule_snippet(rule, "debugger;\nx = 1;", "app.js")
         assert len(violations) > 0
 
-    def test_test_rule_against_snippet_clean(self):
+    def test_evaluate_rule_snippet_clean(self):
         rule = {
             "id": "no_debugger",
             "name": "No debugger",
@@ -130,7 +130,7 @@ class TestPolicyEngine:
             "pattern": r"\bdebugger\b",
             "severity": "error",
         }
-        violations = test_rule_against_snippet(rule, "x = 1\ny = 2", "app.py")
+        violations = evaluate_rule_snippet(rule, "x = 1\ny = 2", "app.py")
         assert len(violations) == 0
 
     def test_all_builtin_templates_exist(self):

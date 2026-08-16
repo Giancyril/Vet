@@ -10,7 +10,7 @@ from app.models.config import RepoConfig
 from app.models.review import PullRequestReview
 from app.models.finding import ReviewFinding
 from app.security.policy_engine import (
-    evaluate_policy, test_rule_against_snippet, BUILTIN_TEMPLATES,
+    evaluate_policy, evaluate_rule_snippet, BUILTIN_TEMPLATES,
 )
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
@@ -96,7 +96,7 @@ async def update_policy_config(
 @router.post("/policy/test-rule")
 async def test_policy_rule(body: TestRuleRequest):
     """Test a single custom rule against a code snippet."""
-    violations = test_rule_against_snippet(body.rule, body.code_snippet, body.filename)
+    violations = evaluate_rule_snippet(body.rule, body.code_snippet, body.filename)
     return {
         "violations": [
             {

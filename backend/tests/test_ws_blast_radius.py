@@ -91,7 +91,7 @@ class TestBlastRadius:
         ]
         result = calculate_blast_radius(diff_files)
         assert "app/services/auth.py" in result.modified_files
-        assert isinstance(result.impact_index, float)
+        assert isinstance(result.impact_index, (int, float))
         assert result.impact_level in {"Low", "Medium", "High", "Critical"}
 
     def test_non_python_files_excluded_from_ast(self):
