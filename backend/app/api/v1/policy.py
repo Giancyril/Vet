@@ -1,9 +1,5 @@
 """
 Custom Repository Policy Engine API endpoints.
-GET  /api/v1/repos/{repo_id}/policy
-PUT  /api/v1/repos/{repo_id}/policy
-POST /api/v1/policy/test-rule
-POST /api/v1/reviews/{review_id}/run-policy
 """
 import json
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,25 +8,14 @@ from sqlalchemy import select
 from app.db.session import get_db
 from app.models.config import RepoConfig
 from app.models.review import PullRequestReview
+from app.models.finding import ReviewFinding
 from app.security.policy_engine import (
     evaluate_policy, test_rule_against_snippet, BUILTIN_TEMPLATES,
-    PolicyViolation,
 )
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
 router = APIRouter()
-
-
-class PolicyRuleSchema(BaseModel):
-    id: str
-    name: str
-    description: str
-    type: str             # "regex" | "ast"
-    pattern: Optional[str] = None
-    check: Optional[str] = None
-    severity: str = "warning"
-    exclude_patterns: Optional[List[str]] = None
 
 
 class PolicyConfigSchema(BaseModel):
@@ -74,14 +59,12 @@ async def get_policy_config(repo_id: str, db: AsyncSession = Depends(get_db)):
     """Get the policy configuration for a repository."""
     result = await db.execute(select(RepoConfig).where(RepoConfig.repository_id == repo_id))
     config = result.scalar_one_or_none()
-    if not config:
+    if not config or not config.custom_policy_rules:
         return PolicyConfigSchema()
-
-    raw = config.custom_policy_rules or "{}"
-    data = json.loads(raw) if isinstance(raw, str) else raw
+    raw = json.loads(config.custom_policy_rules) if isinstance(config.custom_policy_rules, str) else config.custom_policy_rules
     return PolicyConfigSchema(
-        enabled_builtins=data.get("enabled_builtins", []),
-        custom_rules=data.get("custom_rules", []),
+        enabled_builtins=raw.get("enabled_builtins", []),
+        custom_rules=raw.get("custom_rules", []),
     )
 
 
@@ -131,7 +114,7 @@ async def test_policy_rule(body: TestRuleRequest):
 
 @router.post("/reviews/{review_id}/run-policy", response_model=PolicyResultResponse)
 async def run_policy_check(review_id: str, db: AsyncSession = Depends(get_db)):
-    """Run the policy engine against a stored review's diff."""
+    """Run the policy engine against a stored review's findings."""
     result = await db.execute(
         select(PullRequestReview).where(PullRequestReview.id == review_id)
     )
@@ -139,9 +122,8 @@ async def run_policy_check(review_id: str, db: AsyncSession = Depends(get_db)):
     if not review:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found")
 
-    # Get policy config for the repository
     repo_result = await db.execute(
-        select(RepoConfig).where(RepoConfig.repository_id == str(review.repository_id))
+        select(RepoConfig).where(RepoConfig.repository_id == review.repository_id)
     )
     config = repo_result.scalar_one_or_none()
 
@@ -152,7 +134,13 @@ async def run_policy_check(review_id: str, db: AsyncSession = Depends(get_db)):
         enabled_builtins = raw.get("enabled_builtins", [])
         custom_rules = raw.get("custom_rules", [])
 
-    diff_files = [{"filename": f, "patch": ""} for f in (review.pr_files_changed or [])]
+    # Get file paths from findings
+    findings_result = await db.execute(
+        select(ReviewFinding.file_path).where(ReviewFinding.review_id == review_id).distinct()
+    )
+    file_paths = [row[0] for row in findings_result.fetchall() if row[0]]
+    diff_files = [{"filename": fp, "patch": ""} for fp in file_paths]
+
     policy_result = evaluate_policy(diff_files, custom_rules, enabled_builtins)
 
     return PolicyResultResponse(

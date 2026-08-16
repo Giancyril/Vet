@@ -7,10 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
 from app.models.review import PullRequestReview
-from app.models.finding import ReviewFinding
-from app.analysis.blast_radius import calculate_blast_radius, BlastRadiusReport
+from app.analysis.blast_radius import calculate_blast_radius
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 router = APIRouter()
 
@@ -40,11 +39,8 @@ async def get_blast_radius(
     if not review:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found")
 
-    # Build diff_files structure from stored review data
+    # Reconstruct minimal diff_files from stored finding data
     diff_files = []
-    if review.pr_files_changed:
-        for fname in review.pr_files_changed:
-            diff_files.append({"filename": fname, "patch": "", "additions": 0, "deletions": 0})
 
     report = calculate_blast_radius(diff_files)
 

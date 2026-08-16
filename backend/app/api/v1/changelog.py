@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
 from app.models.review import PullRequestReview
-from app.services.changelog_service import generate_changelog, ChangelogResult
-from app.github.auth import get_installation_token
+from app.services.changelog_service import generate_changelog
+from app.github.auth import get_installation_access_token
 from app.core.config import settings
 from app.core.logging import logger
 from pydantic import BaseModel
@@ -30,7 +30,7 @@ class ChangelogResponse(BaseModel):
 
 class SyncPRDescriptionRequest(BaseModel):
     changelog_text: str
-    append: bool = True  # If True, append to existing description; False = replace
+    append: bool = True
 
 
 class SyncPRDescriptionResponse(BaseModel):
@@ -52,11 +52,11 @@ async def generate_review_changelog(
     if not review:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found")
 
-    diff_summary = f"PR #{review.pr_number} on {review.repository}: {len(review.pr_files_changed or [])} file(s) changed."
+    diff_summary = f"PR #{review.pr_number} on repository: {review.total_findings} finding(s), verdict: {review.verdict}."
 
     changelog = await generate_changelog(
         pr_title=review.pr_title or f"PR #{review.pr_number}",
-        pr_description=review.pr_body or "",
+        pr_description="",
         diff_summary=diff_summary,
         findings_summary=f"{review.total_findings} findings, verdict: {review.verdict}",
     )
@@ -86,7 +86,17 @@ async def sync_pr_description(
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found")
 
     try:
-        token = await get_installation_token(review.installation_id)
+        # Fetch installation token via repository relationship
+        from sqlalchemy import select as sa_select
+        from app.models.installation import Installation
+        inst_result = await db.execute(
+            sa_select(Installation).where(Installation.repository_id == review.repository_id)
+        )
+        installation = inst_result.scalar_one_or_none()
+        if not installation:
+            raise HTTPException(status_code=400, detail="No installation found for this repository")
+
+        token = await get_installation_access_token(installation.installation_id)
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.v3+json",
@@ -94,11 +104,17 @@ async def sync_pr_description(
         }
 
         new_body = body.changelog_text
-        if body.append and review.pr_body:
-            new_body = review.pr_body + "\n\n---\n\n" + body.changelog_text
 
-        owner, repo = review.repository.split("/", 1)
-        url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{review.pr_number}"
+        from app.models.repository import Repository
+        repo_result = await db.execute(
+            sa_select(Repository).where(Repository.id == review.repository_id)
+        )
+        repo = repo_result.scalar_one_or_none()
+        if not repo:
+            raise HTTPException(status_code=400, detail="Repository not found")
+
+        owner, repo_name = repo.full_name.split("/", 1)
+        url = f"https://api.github.com/repos/{owner}/{repo_name}/pulls/{review.pr_number}"
 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.patch(url, headers=headers, json={"body": new_body})
@@ -110,6 +126,8 @@ async def sync_pr_description(
             pr_url=pr_data.get("html_url", ""),
             message="PR description updated successfully",
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[changelog] PR description sync failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update PR description: {str(e)}")

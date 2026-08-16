@@ -2,16 +2,15 @@
 AI Test Generator API endpoints.
 POST /api/v1/reviews/{review_id}/generate-tests
 """
-import json
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
 from app.models.review import PullRequestReview
+from app.models.finding import ReviewFinding
 from app.services.test_generator import generate_tests_for_diff
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 
 router = APIRouter()
 
@@ -44,12 +43,16 @@ async def generate_tests(
     if not review:
         raise HTTPException(status_code=404, detail=f"Review {review_id} not found")
 
-    # Build minimal diff_files for generation
-    diff_files = []
-    for fname in (review.pr_files_changed or []):
-        diff_files.append({"filename": fname, "patch": ""})
+    # Get file paths from findings
+    findings_result = await db.execute(
+        select(ReviewFinding.file_path).where(
+            ReviewFinding.review_id == review_id
+        ).distinct()
+    )
+    file_paths = [row[0] for row in findings_result.fetchall() if row[0]]
 
-    pr_context = f"{review.pr_title or ''} — PR #{review.pr_number} on {review.repository}"
+    diff_files = [{"filename": fp, "patch": ""} for fp in file_paths]
+    pr_context = f"{review.pr_title or f'PR #{review.pr_number}'}"
     suites = await generate_tests_for_diff(diff_files, pr_context=pr_context)
 
     return GenerateTestsResponse(

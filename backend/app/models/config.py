@@ -33,6 +33,7 @@ class RepoConfig(Base):
     enabled_categories: Mapped[List[str]] = mapped_column(JSON, default=DEFAULT_CATEGORIES)
     max_comments_per_pr: Mapped[int] = mapped_column(Integer, default=15)
     custom_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    custom_policy_rules: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -46,3 +47,4 @@ class RepoConfig(Base):
     repository: Mapped["Repository"] = relationship(
         "Repository", back_populates="config"
     )
+
